@@ -1,4 +1,4 @@
-package com.dataMining;
+package com.mse.fu;
 
 import java.io.BufferedReader;
 import java.io.File;

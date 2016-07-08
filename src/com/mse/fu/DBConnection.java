@@ -1,4 +1,4 @@
-package com.dataMining;
+package com.mse.fu;
 
 import java.io.FileInputStream;
 import java.io.IOException;
