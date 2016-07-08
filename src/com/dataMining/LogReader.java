@@ -12,7 +12,7 @@ import java.text.DecimalFormat;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class RegexTest {
+public class LogReader {
 
 //    static final String LOG_FOLDER = "C:\\Users\\dgvie\\Google Drive\\MSE\\Thesis\\Data\\log_http_apache";
     static final String LOG_FOLDER = "D:\\New folder\\log_http_apache";
@@ -44,7 +44,6 @@ public class RegexTest {
 
         BufferedReader br = null;
         String currentLine;
-//        List<LogObject> logObjectList;
 
         Connection con = null;
         PreparedStatement ps = null;
@@ -65,7 +64,6 @@ public class RegexTest {
 
                     System.out.println(" - " + file.getAbsolutePath());
                     long s = System.currentTimeMillis();
-//                    logObjectList = new ArrayList<LogObject>();
 
                     br = new BufferedReader(new FileReader(file));
                     count = 0;
@@ -106,17 +104,14 @@ public class RegexTest {
         }
     }
 
-    private static LogObject getLogObjectFromLine(String line, PreparedStatement  ps) throws Exception {
-        LogObject logObject = null;
+    private static void getLogObjectFromLine(String line, PreparedStatement  ps) throws Exception {
 
         Matcher requestLineMatcher;
 
-        /*String[] requestLineArr;*/
         String[] dateTime;
 
         Matcher m = Pattern.compile(getAccessLogRegex()).matcher(line); // http://stackoverflow.com/questions/3366281/tokenizing-a-string-but-ignoring-delimiters-within-quotes
         while (m.find()) {
-            logObject = new LogObject();
 
 //            logObject.setClientIp(m.group(1));
             ps.setString(1, m.group(1));
@@ -177,10 +172,6 @@ public class RegexTest {
 
         }
 
-        if (logObject == null) {
-            System.out.println(line);
-        }
-        return logObject;
     }
 
     private static String getBaseDomain(String url) {
