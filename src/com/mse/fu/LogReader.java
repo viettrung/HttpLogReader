@@ -1,23 +1,28 @@
 package com.mse.fu;
 
+import com.mysql.jdbc.StringUtils;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
+import java.net.URLEncoder;
+import java.sql.*;
 import java.text.DecimalFormat;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class LogReader {
 
-//    static final String LOG_FOLDER = "C:\\Users\\dgvie\\Google Drive\\MSE\\Thesis\\Data\\log_http_apache";
-    static final String LOG_FOLDER = "D:\\New folder\\log_http_apache";
+    static final String LOG_FOLDER = "C:\\Users\\dgvie\\Google Drive\\MSE\\Thesis\\Data\\log_http_apache";
+//    static final String LOG_FOLDER = "D:\\New folder\\log_http_apache";
 
-    static String query = "insert into requestlog (clientIP, identity, username, date, time, method, accessURL, accessURLDomain, protocol, statusCode, responseSize, referer, refererDomain, userAgent) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    static String INSERT_QUERY = "insert into requestlog (clientIP, identity, username, date, time, method, accessURL, accessURLDomain, protocol, statusCode, responseSize, referer, refererDomain, userAgent, hour) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     static DecimalFormat formatter = new DecimalFormat("#0.00");
 
@@ -56,7 +61,7 @@ public class LogReader {
             con = DBConnection.getConnection();
             con.setAutoCommit(false);
 
-            ps = con.prepareStatement(query);
+            ps = con.prepareStatement(INSERT_QUERY);
 
             long start = System.currentTimeMillis();
             for (File file : logFolder.listFiles()) {
@@ -70,6 +75,7 @@ public class LogReader {
                     while ((currentLine = br.readLine()) != null) {
                         count++;
                         getLogObjectFromLine(currentLine.trim().replaceAll(" +", " "), ps);
+                        break;
                     }
 
                     System.out.println("Commit the batch...");
@@ -81,10 +87,13 @@ public class LogReader {
                     System.out.println("   ======      ");
 
                     con.commit();
+                    break;
                 }
             }
             long end = System.currentTimeMillis();
             System.out.println("Time taken: " + (end - start) / 1000);
+
+//            getFeaturesFromUserAgentStr(con);
 
             if (ps != null) {
                 ps.close();
@@ -101,6 +110,56 @@ public class LogReader {
             } catch (SQLException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    private static void getFeaturesFromUserAgentStr(Connection conn) {
+        try {
+            PreparedStatement ps = conn.prepareStatement("insert into agent(agent_name, os_name, userAgent) values (?, ?, ?)");
+            Statement stmt = conn.createStatement();
+
+            String query = "SELECT DISTINCT(userAgent) from requestlog where userAgent not IN (select userAgent from agent)";
+
+            long startQuery = System.currentTimeMillis();
+            ResultSet rs = stmt.executeQuery(query);
+            long endQuery = System.currentTimeMillis();
+            System.out.println("Query time: " + (endQuery-startQuery)/1000);
+
+            System.out.println("Calling API...");
+            long startAPICall = System.currentTimeMillis();
+            while (rs.next()) {
+                String userAgent = rs.getString("userAgent");
+
+                JSONObject json = getJsonFromUserAgentStr(userAgent);
+
+                if (!StringUtils.isNullOrEmpty(json.get("agent_name").toString())) {
+                    ps.setString(1, json.get("agent_name").toString());
+                } else {
+                    ps.setString(1, "unknown");
+                }
+
+                if (!StringUtils.isNullOrEmpty(json.get("os_name").toString())) {
+                    ps.setString(2, json.get("os_name").toString());
+                } else {
+                    ps.setString(2, "unknown");
+                }
+                ps.setString(3, userAgent);
+
+                ps.addBatch();
+            }
+            long endAPICall = System.currentTimeMillis();
+            System.out.println("Time to call API: " + (endAPICall-startAPICall)/1000);
+
+            System.out.println("Executing batch...");
+            long startExecuteBatch = System.currentTimeMillis();
+//            ps.executeBatch();
+            long endExecuteBatch = System.currentTimeMillis();
+            System.out.println("Time to call executeBatch: " + (endExecuteBatch-startExecuteBatch)/1000);
+
+//            conn.commit();
+            ps.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
@@ -167,6 +226,7 @@ public class LogReader {
             // http://www.useragentstring.com/pages/api.php
 //            logObject.setUserAgent(m.group(9));
             ps.setString(14, m.group(9));
+            ps.setString(15, dateTime[1].split(":")[0]);
 
             ps.addBatch();
 
@@ -187,5 +247,38 @@ public class LogReader {
 //            System.out.println(url);
         }
         return baseDomain;
+    }
+
+    private static JSONObject getJsonFromUserAgentStr(String userAgent) {
+
+        JSONObject jsonObject = null;
+        try {
+
+            URL url = new URL("http://www.useragentstring.com/?uas=" + URLEncoder.encode(userAgent, "UTF-8") + "&getJSON=all");
+
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+
+            if (conn.getResponseCode() != 200) {
+                throw new RuntimeException("Failed : HTTP error code : " + conn.getResponseCode());
+            }
+
+            BufferedReader br = new BufferedReader(new InputStreamReader((conn.getInputStream())));
+
+            String output;
+            while ((output = br.readLine()) != null) {
+                JSONParser parser = new JSONParser();
+                Object obj = parser.parse(output);
+
+                jsonObject = (JSONObject) obj;
+            }
+
+            conn.disconnect();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return jsonObject;
     }
 }
